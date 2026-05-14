@@ -1,0 +1,27 @@
+{
+  "host": "0.0.0.0",
+  "port": 8080,
+  "log_level": "INFO",
+  "routes": [
+    {
+      "name": "github-to-slack",
+      "source_path": "/hooks/github",
+      "target_url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK",
+      "secret": "my-github-secret",
+      "filter_rules": [
+        {
+          "field": "action",
+          "operator": "eq",
+          "value": "opened"
+        }
+      ],
+      "transform": "github_pr_to_slack"
+    },
+    {
+      "name": "generic-relay",
+      "source_path": "/hooks/generic",
+      "target_url": "https://example.com/receive",
+      "filter_rules": []
+    }
+  ]
+}
