@@ -1,4 +1,4 @@
-"""Tests for hookbridge.event_log."""
+"""Tests for hookbridge/event_log.py"""
 
 import pytest
 from hookbridge.event_log import EventLog, EventEntry
@@ -6,81 +6,67 @@ from hookbridge.event_log import EventLog, EventEntry
 
 @pytest.fixture
 def log():
-    return EventLog(max_size=10)
+    return EventLog(max_size=5)
 
 
 def test_record_returns_entry(log):
-    entry = log.record(
-        route_id="github",
-        status="success",
-        target_url="http://example.com/hook",
-        status_code=200,
-    )
+    entry = log.record("github", "success", "http://example.com", http_status=200)
     assert isinstance(entry, EventEntry)
-    assert entry.route_id == "github"
+    assert entry.route == "github"
     assert entry.status == "success"
-    assert entry.status_code == 200
+    assert entry.http_status == 200
     assert entry.error is None
 
 
 def test_event_id_increments(log):
-    e1 = log.record("r1", "success", "http://a.com", 200)
-    e2 = log.record("r1", "failure", "http://a.com", 500)
-    assert e1.event_id != e2.event_id
-    assert e1.event_id < e2.event_id  # lexicographic order holds for zero-padded
+    e1 = log.record("r", "success", "http://a.com")
+    e2 = log.record("r", "failure", "http://b.com")
+    assert e2.event_id == e1.event_id + 1
 
 
 def test_all_returns_all_entries(log):
-    log.record("r1", "success", "http://a.com", 200)
-    log.record("r2", "failure", "http://b.com", 500)
-    entries = log.all()
-    assert len(entries) == 2
+    log.record("r1", "success", "http://a.com")
+    log.record("r2", "success", "http://b.com")
+    assert len(log.all()) == 2
 
 
 def test_for_route_filters_by_route(log):
-    log.record("r1", "success", "http://a.com", 200)
-    log.record("r2", "failure", "http://b.com", 500)
-    log.record("r1", "filtered", "http://a.com")
-    r1_entries = log.for_route("r1")
-    assert len(r1_entries) == 2
-    assert all(e.route_id == "r1" for e in r1_entries)
+    log.record("alpha", "success", "http://a.com")
+    log.record("beta", "failure", "http://b.com")
+    log.record("alpha", "filtered", "http://c.com")
+    result = log.for_route("alpha")
+    assert len(result) == 2
+    assert all(e.route == "alpha" for e in result)
+
+
+def test_get_by_id(log):
+    e = log.record("r", "success", "http://x.com")
+    found = log.get(e.event_id)
+    assert found is not None
+    assert found.event_id == e.event_id
+
+
+def test_get_missing_returns_none(log):
+    assert log.get(9999) is None
 
 
 def test_max_size_evicts_oldest(log):
-    for i in range(12):
-        log.record("r1", "success", f"http://example.com/{i}", 200)
-    assert log.size() == 10  # maxlen=10
+    for i in range(6):
+        log.record("r", "success", f"http://url{i}.com")
+    assert log.size() == 5
 
 
-def test_clear_empties_log(log):
-    log.record("r1", "success", "http://a.com", 200)
+def test_clear_resets(log):
+    log.record("r", "success", "http://a.com")
     log.clear()
     assert log.size() == 0
-    assert log.all() == []
+    e = log.record("r", "success", "http://b.com")
+    assert e.event_id == 1
 
 
-def test_to_dict_contains_all_fields(log):
-    entry = log.record(
-        route_id="stripe",
-        status="failure",
-        target_url="http://example.com/stripe",
-        status_code=503,
-        error="Service unavailable",
-        payload_preview='{"event": "charge.created"}',
-    )
-    d = entry.to_dict()
-    assert d["route_id"] == "stripe"
-    assert d["status"] == "failure"
-    assert d["status_code"] == 503
-    assert d["error"] == "Service unavailable"
-    assert d["payload_preview"] == '{"event": "charge.created"}'
-    assert "timestamp" in d
-    assert "event_id" in d
-
-
-def test_timestamp_is_iso_format(log):
-    entry = log.record("r1", "success", "http://a.com", 200)
-    # Should not raise
-    from datetime import datetime
-    dt = datetime.fromisoformat(entry.timestamp)
-    assert dt is not None
+def test_to_dict_contains_expected_keys(log):
+    e = log.record("r", "failure", "http://fail.com", error="timeout")
+    d = e.to_dict()
+    for key in ("event_id", "route", "status", "target_url", "http_status", "error", "timestamp"):
+        assert key in d
+    assert d["error"] == "timeout"

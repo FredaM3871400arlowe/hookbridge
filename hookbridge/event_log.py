@@ -1,82 +1,85 @@
-"""In-memory event log for tracking recent webhook dispatches."""
+"""In-memory event log for recording webhook dispatch activity."""
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
-from collections import deque
 import threading
+from dataclasses import dataclass, field
+from typing import List, Optional
+import time
 
 
 @dataclass
 class EventEntry:
-    event_id: str
-    route_id: str
-    timestamp: str
-    status: str  # 'success' | 'failure' | 'filtered'
-    status_code: Optional[int]
+    event_id: int
+    route: str
+    status: str          # "success" | "failure" | "filtered"
     target_url: str
-    error: Optional[str] = None
-    payload_preview: Optional[str] = None
+    http_status: Optional[int]
+    error: Optional[str]
+    timestamp: float = field(default_factory=time.time)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self):
         return {
             "event_id": self.event_id,
-            "route_id": self.route_id,
-            "timestamp": self.timestamp,
+            "route": self.route,
             "status": self.status,
-            "status_code": self.status_code,
             "target_url": self.target_url,
+            "http_status": self.http_status,
             "error": self.error,
-            "payload_preview": self.payload_preview,
+            "timestamp": self.timestamp,
         }
 
 
 class EventLog:
-    def __init__(self, max_size: int = 500):
-        self._max_size = max_size
-        self._entries: deque = deque(maxlen=max_size)
+    def __init__(self, max_size: int = 1000):
+        self._entries: List[EventEntry] = []
         self._lock = threading.Lock()
+        self._max_size = max_size
         self._counter = 0
 
-    def _next_id(self) -> str:
+    def _next_id(self) -> int:
         self._counter += 1
-        return f"evt-{self._counter:06d}"
+        return self._counter
 
     def record(
         self,
-        route_id: str,
+        route: str,
         status: str,
         target_url: str,
-        status_code: Optional[int] = None,
+        http_status: Optional[int] = None,
         error: Optional[str] = None,
-        payload_preview: Optional[str] = None,
     ) -> EventEntry:
-        ts = datetime.now(timezone.utc).isoformat()
         with self._lock:
             entry = EventEntry(
                 event_id=self._next_id(),
-                route_id=route_id,
-                timestamp=ts,
+                route=route,
                 status=status,
-                status_code=status_code,
                 target_url=target_url,
+                http_status=http_status,
                 error=error,
-                payload_preview=payload_preview,
             )
             self._entries.append(entry)
-        return entry
+            if len(self._entries) > self._max_size:
+                self._entries.pop(0)
+            return entry
 
     def all(self) -> List[EventEntry]:
         with self._lock:
             return list(self._entries)
 
-    def for_route(self, route_id: str) -> List[EventEntry]:
+    def for_route(self, route: str) -> List[EventEntry]:
         with self._lock:
-            return [e for e in self._entries if e.route_id == route_id]
+            return [e for e in self._entries if e.route == route]
 
-    def clear(self) -> None:
+    def get(self, event_id: int) -> Optional[EventEntry]:
+        with self._lock:
+            for e in self._entries:
+                if e.event_id == event_id:
+                    return e
+        return None
+
+    def clear(self):
         with self._lock:
             self._entries.clear()
+            self._counter = 0
 
     def size(self) -> int:
         with self._lock:
