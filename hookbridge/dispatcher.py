@@ -75,3 +75,22 @@ def dispatch_all(
 ) -> list[DispatchResult]:
     """Dispatch *raw_payload* across every route in *routes*."""
     return [dispatch(route, raw_payload) for route in routes]
+
+
+def summarise_results(results: list[DispatchResult]) -> dict[str, int]:
+    """Return a count summary of *results* by outcome category.
+
+    Keys in the returned dict:
+    - ``"success"``  — routes that relayed successfully.
+    - ``"skipped"``  — routes whose filters did not match.
+    - ``"failed"``   — routes that encountered a relay error.
+    """
+    summary: dict[str, int] = {"success": 0, "skipped": 0, "failed": 0}
+    for result in results:
+        if result.skipped:
+            summary["skipped"] += 1
+        elif result.success:
+            summary["success"] += 1
+        else:
+            summary["failed"] += 1
+    return summary
