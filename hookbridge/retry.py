@@ -30,6 +30,20 @@ class RetryResult:
     last_status: Optional[int] = None
     value: Any = None
 
+    def raise_if_failed(self) -> None:
+        """Re-raise the last exception if the result represents a failure.
+
+        Raises:
+            RuntimeError: If the retry failed but no exception was recorded.
+            Exception: The last recorded exception, if one exists.
+        """
+        if not self.success:
+            if self.last_exception is not None:
+                raise self.last_exception
+            raise RuntimeError(
+                f"Retry failed after {self.attempts} attempt(s) with no exception recorded."
+            )
+
 
 def with_retry(
     fn: Callable[[], Any],
