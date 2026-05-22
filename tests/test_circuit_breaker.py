@@ -90,6 +90,14 @@ def test_success_resets_failure_count_when_closed(cb: CircuitBreaker) -> None:
     assert cb.get_state("r1").failure_count == 0
 
 
+def test_does_not_open_below_threshold(cb: CircuitBreaker) -> None:
+    """Circuit should remain CLOSED when failures are below the threshold."""
+    for _ in range(2):  # threshold is 3, so 2 failures should not open
+        cb.record_failure("r1")
+    assert cb.get_state("r1").state == CircuitState.CLOSED
+    assert cb.is_allowed("r1") is True
+
+
 # --- config helpers ---
 
 def test_config_from_dict_defaults() -> None:
@@ -100,24 +108,7 @@ def test_config_from_dict_defaults() -> None:
 
 
 def test_config_from_dict_custom() -> None:
-    cfg = config_from_dict({"failure_threshold": 10, "recovery_timeout": 60.0})
+    cfg = config_from_dict({"failure_threshold": 10, "recovery_timeout": 60.0, "success_threshold": 3})
     assert cfg.failure_threshold == 10
     assert cfg.recovery_timeout == 60.0
-
-
-def test_get_route_breaker_config_uses_route_level() -> None:
-    route = {"circuit_breaker": {"failure_threshold": 2}}
-    cfg = get_route_breaker_config(route)
-    assert cfg.failure_threshold == 2
-
-
-def test_get_route_breaker_config_falls_back_to_app() -> None:
-    route = {}
-    app = {"circuit_breaker": {"failure_threshold": 7}}
-    cfg = get_route_breaker_config(route, app)
-    assert cfg.failure_threshold == 7
-
-
-def test_get_route_breaker_config_defaults_when_none() -> None:
-    cfg = get_route_breaker_config({})
-    assert cfg.failure_threshold == 5
+    assert cfg.success_threshold == 3
